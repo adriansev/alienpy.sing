@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+U=$(id -nu)
+G=$(id -ng)
+
+NAME="alienpy"
+SING_DEF="Singularity"
+SING_DEF_CUSTOM="${SING_DEF}.tmp"
+
+if [[ "${1}" == "sandbox" ]]; then
+  shift
+  DO_SANDBOX="--sandbox --fix-perms"
+fi
+
+TAG="${1}"
+shift
+
+[[ -n ${DO_SANDBOX} ]] && NAME="${NAME}_sandbox"
+if [[ -n ${TAG} ]]; then
+  NAME="${NAME}:${TAG}"
+  sed "/From/s/:latest/:${TAG}/" "${SING_DEF}" > "${SING_DEF_CUSTOM}"
+fi
+
+NAME="${NAME}.sif"
+[[ -e "${NAME}" ]] && rm -f "${NAME}"
+
+[[ -e ${SING_DEF_CUSTOM} ]] && SING_DEF="${SING_DEF_CUSTOM}"
+
+singularity build --fakeroot ${DO_SANDBOX} "${NAME}" "${SING_DEF}"
+
+[[ -n "${DO_SANDBOX}" ]] && sudo chown -R ${U}:${G} "${NAME}"
+sudo chown -R ${U}:${G} "${SINGULARITY_CACHEDIR:-${HOME}/.singularity/cache}"
+
+[[ -e ${SING_DEF_CUSTOM} ]] && rm -rf "${SING_DEF_CUSTOM}"
+
+[[ -z ${TAG} ]] && TAG="latest"
+
+echo "Push to registry.cern.ch .."
+oras push registry.cern.ch/asevcenc/alienpy:${TAG} ${NAME}:application/vnd.sylabs.sif.layer.v1.sif && echo "Done" || echo "Fail"
+echo
+
+echo "Push to https://cloud.sylabs.io/library/adriansev .."
+singularity push -U ${NAME} library://adriansev/default/alienpy:${TAG} && echo "Done" || echo "Fail"
+echo
+
